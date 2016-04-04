@@ -5,6 +5,10 @@ from django.db import models
 from django.utils.encoding import python_2_unicode_compatible
 from model_utils.choices import Choices
 
+from pgsearch.fields import TSVectorField
+from pgsearch.managers import ReadOnlySearchManager
+
+
 from .manager import SNOMEDCTModelManager
 
 # Get the cache shortcut
@@ -424,3 +428,41 @@ class SimpleMapRefSet(BaseSNOMEDCTModel):
     class Meta:
         managed = False
         db_table = 'sct2_simple_map_refset'
+
+
+#############################
+### Database views models ###
+#############################
+
+
+@python_2_unicode_compatible
+class TermBasedView(models.Model):
+    lang_refset_refset = models.ForeignKey(Concept, on_delete=models.PROTECT, choices=LangRefSet.REFSET_CHOICES, related_name='+', primary_key=True)
+    lang_refset_acceptability = models.ForeignKey(Concept, on_delete=models.PROTECT, choices=LangRefSet.ACCEPTABILITY_CHOICES, related_name='+')
+    description = models.ForeignKey(Description, on_delete=models.PROTECT, related_name='+')
+    description_language_code = models.CharField(max_length=2)
+    description_type = models.ForeignKey(Concept, on_delete=models.PROTECT, choices=Description.TYPE_CHOICES, related_name='+')
+    description_case_significance = models.ForeignKey(Concept, on_delete=models.PROTECT, choices=Description.CASE_SIGNIFICANCE_CHOICES, related_name='+')
+    description_term = models.CharField(max_length=255)
+    concept = models.ForeignKey(Concept, on_delete=models.PROTECT, related_name='+')
+    concpet_active = models.BooleanField()
+    concpet_definition_status = models.ForeignKey(Concept, on_delete=models.PROTECT, choices=Concept.DEFINITION_STATUS_CHOICES, related_name='+')
+    search_term = TSVectorField()
+
+    objects = ReadOnlySearchManager(
+        search_field='search_term'
+    )
+
+    class Meta:
+        managed = False
+        db_table = 'terms_based_view'
+
+    def __str__(self):
+        return "%s: %s" % (self.description_language_code.upper(), self.description_term)
+
+    def save(self, *args, **kwargs):
+        raise NotImplementedError
+
+    def delete(self, *args, **kwargs):
+        raise NotImplementedError
+

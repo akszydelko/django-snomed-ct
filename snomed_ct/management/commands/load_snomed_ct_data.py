@@ -114,6 +114,8 @@ class Command(BaseCommand):
             """, [os.path.join(options['snomed_ct_location'], 'Refset', 'Map',
                                'der2_iisssccRefset_ExtendedMapSnapshot_INT_%s.txt' % self.release_date)])
 
+            self.stdout.write('Committing changes...')
+
         self.stdout.write(self.style.SUCCESS('Successfully loaded SNOMED CT %s release.' % self.release_date))
 
     def __raise_date_mismatch_error(self):
