@@ -61,13 +61,20 @@ morphologies (of disorders via the **morphologies** property)
 ## ICD 10 mapping ##
 Once you have loaded ICD 10 <-> SNOMED-CT mappings (via the --icd10_map_location option of the load_snomed_ct_data 
 manage command), you can start finding mappings by ICD10 codes, iterating over just those SNOMED-CT concepts with
-ICD 10 mappings, etc (the example below uses the very useful [icd10-cm](https://pypi.org/project/icd10-cm/) 
-python library to iterate over SNOMED CD concepts mapped to the I10 code (Essential (primary) hypertension)).
+ICD 10 mappings, etc.
+
+The example below uses the very useful [icd10-cm](https://pypi.org/project/icd10-cm/) 
+python library to iterate just over the subset of SNOMED CT concepts mapped to the ICD10 _I10_ code (Essential (primary) hypertension)) and that have
+textual definitions, printed along with their definitions.
 
 ```python
 import icd10
 icd_code = icd10.find('I10')
-for ICD10_Mapping.objects.filter(map_target__icontains=str(icd_code.code),map_rule='TRUE').concepts():
-Out[X]: <ConceptQuerySet [<Concept: 19769006|High-renin essential hypertension (disorder)>, <Concept: 46481004|Low-renin essential hypertension (disorder)>, <Concept: 59720008|Sustained diastolic hypertension (disorder)>, <Concept: 78975002|Malignant essential hypertension (disorder)>, <Concept: 84094009|Rebound hypertension (disorder)>, <Concept: 170577003|Good hypertension control (finding)>, <Concept: 198945003|Benign essential hypertension complicating pregnancy, childbirth and the puerperium - delivered with postnatal complication (disorder)>, <Concept: 371125006|Labile essential hypertension (disorder)>, <Concept: 397748008|Hypertension with albuminuria (disorder)>, <Concept: 421731000|Hypertensive optic neuropathy (disorder)>, <Concept: 429457004|Systolic essential hypertension (disorder)>, <Concept: 449759005|Complication of systemic hypertensive disorder (disorder)>, <Concept: 712832005|Supine hypertension (disorder)>, <Concept: 717824007|Progressive arterial occlusive disease, hypertension, heart defect, bone fragility, brachysyndactyly syndrome (disorder)>, <Concept: 720568003|Brachydactyly and arterial hypertension syndrome (disorder)>]>
-
+for t in TextDefinition.objects.filter(concept__in=ICD10_Mapping.objects
+                                                     .filter(map_target__icontains=str(icd_code.code),map_rule='TRUE')
+                                                     .concepts()):
+    print(t.concept, t.term)    
+712832005|Supine hypertension (disorder) A systolic blood pressure ≥150 mm Hg or diastolic blood pressure ≥90 mm Hg while lying down.
+720568003|Brachydactyly and arterial hypertension syndrome (disorder) A rare genetic brachydactyly syndrome with the association of brachydactyly type E and hypertension (due to vascular or neurovascular anomalies) as well as the additional features of short stature and low birth weight (compared to non-affected family members), stocky build and a round face. The onset of hypertension is often in childhood and if untreated, most patients will have had a stroke by the age of 50.
+717824007|Progressive arterial occlusive disease, hypertension, heart defect, bone fragility, brachysyndactyly syndrome (disorder) Grange syndrome has characteristics of stenosis or occlusion of multiple arteries (including the renal, cerebral and abdominal vessels), hypertension, brachysyndactyly, syndactyly, increased bone fragility, and learning difficulties or borderline intellectual deficit. So far, the syndrome has been reported in six patients from three families. Congenital heart defects were also reported in some cases. The mode of transmission remains unclear, both autosomal recessive and autosomal dominant inheritance with decreased penetrance and parental gonadal mosaicism have been proposed.
 ```

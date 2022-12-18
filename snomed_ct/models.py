@@ -116,9 +116,14 @@ class Concept(CommonSNOMEDModel):
     def fully_specified_name_no_type(self):
         return SNOMED_NAME_PATTERN.search(self.get_fully_specified_name().term).group('name')
 
+
+    @property
+    def fully_specified_name(self):
+        return self.get_fully_specified_name().term
+
     @classmethod
     def by_id(cls, _id, **kwargs):
-        return cls.objects.filter(id=_id, **kwargs)
+        return cls.objects.get(id=_id, **kwargs)
 
     @classmethod
     def by_full_specified_name(cls, **kwargs):
@@ -168,7 +173,7 @@ class Concept(CommonSNOMEDModel):
         return self.related_concepts(type_id=FINDING_SITE)
 
     @property
-    def morphology(self):
+    def morphologies(self):
         return self.related_concepts(type_id=ASSOCIATED_MORPHOLOGY)
 
     def definitions(self, values=False, **kwargs):
@@ -524,11 +529,23 @@ class ExtendedMapRefSet(CommonSNOMEDModel):
         abstract = True
         db_table = 'sct2_extended_map_refset'
 
+class ICD10_MappingQuerySet(CommonSNOMEDQuerySet):
+    def concepts(self):
+        return Concept.objects.filter(id__in=self.values_list('referenced_component', flat=True))
+
+class ICD10_MappingManager(SNOMEDCTModelManager):
+    use_for_related_fields = True
+
+    def get_queryset(self):
+        return ICD10_MappingQuerySet(self.model)
+
 class ICD10_Mapping(ExtendedMapRefSet):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     referenced_component_name = models.TextField(blank=True, null=True, db_column='referencedComponentName')
     map_target_name = models.TextField(blank=True, null=True, db_column='mapTargetName')
     map_category_name = models.TextField(blank=True, null=True, db_column='mapCategoryName')
+
+    objects = ICD10_MappingManager()
 
     class Meta:
         db_table = 'icd10_snomed_ct'
