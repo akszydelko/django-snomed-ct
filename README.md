@@ -59,8 +59,8 @@ Similarly, you can iterate over the finding site concepts (via the **finding_sit
 morphologies (of disorders via the **morphologies** property)
 
 ## ICD 10 mapping ##
-Once you have loaded ICD 10 <-> SNOMED-CT mappings (via the --icd10_map_location option of the load_snomed_ct_data 
-manage command), you can start finding mappings by ICD10 codes, iterating over just those SNOMED-CT concepts with
+Once you have loaded ICD 10 <-> SNOMED-CT mappings via the --icd10_map_location option of the load_snomed_ct_data 
+manage command (see the section below about loading SNOMED-CT release data into django-snomed-ct), you can start finding mappings by ICD10 codes, iterating over just those SNOMED-CT concepts with
 ICD 10 mappings, etc.
 
 The example below uses the very useful [icd10-cm](https://pypi.org/project/icd10-cm/) 
@@ -77,4 +77,12 @@ for t in TextDefinition.objects.filter(concept__in=ICD10_Mapping.objects
 712832005|Supine hypertension (disorder) A systolic blood pressure ≥150 mm Hg or diastolic blood pressure ≥90 mm Hg while lying down.
 720568003|Brachydactyly and arterial hypertension syndrome (disorder) A rare genetic brachydactyly syndrome with the association of brachydactyly type E and hypertension (due to vascular or neurovascular anomalies) as well as the additional features of short stature and low birth weight (compared to non-affected family members), stocky build and a round face. The onset of hypertension is often in childhood and if untreated, most patients will have had a stroke by the age of 50.
 717824007|Progressive arterial occlusive disease, hypertension, heart defect, bone fragility, brachysyndactyly syndrome (disorder) Grange syndrome has characteristics of stenosis or occlusion of multiple arteries (including the renal, cerebral and abdominal vessels), hypertension, brachysyndactyly, syndactyly, increased bone fragility, and learning difficulties or borderline intellectual deficit. So far, the syndrome has been reported in six patients from three families. Congenital heart defects were also reported in some cases. The mode of transmission remains unclear, both autosomal recessive and autosomal dominant inheritance with decreased penetrance and parental gonadal mosaicism have been proposed.
+```
+
+## Loading data ##
+You can use the **load_snomed_ct_data** custom django-admin command to load a release into a configured database.  
+Below is an example that also loads the ICD10 mapping release, both from the _SNOMED_CT_to_ICD-10-CM_Resources_20220901_ and _SnomedCT_USEditionRF2_PRODUCTION_20220901T120000Z_ directories:  
+
+```bash
+> python manage.py load_snomed_ct_data --icd10_map_location=SNOMED_CT_to_ICD-10-CM_Resources_20220901/SNOMED_CT_to_ICD-10-CM_Resources_20220901/ SnomedCT_USEditionRF2_PRODUCTION_20220901T120000Z/Full/
 ```
