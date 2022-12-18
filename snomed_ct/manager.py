@@ -7,8 +7,8 @@ class SNOMEDCTModelManager(Manager):
     def create(self, *args, **kwargs):
         raise SNOMEDCTModelOperationNotPermitted
 
-    def bulk_create(self, *args, **kwargs):
-        raise SNOMEDCTModelOperationNotPermitted
+    # def bulk_create(self, *args, **kwargs):
+    #     raise SNOMEDCTModelOperationNotPermitted
 
     def get_or_create(self, *args, **kwargs):
         raise SNOMEDCTModelOperationNotPermitted
