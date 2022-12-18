@@ -1,7 +1,7 @@
 django-snomed-ct
 ====================
 
-Django app/model/utilities for quering SNOMED CT database.
+A general-purpose [Python/Django](https://www.djangoproject.com/) framework for quering the [SNOMED Clinical Terms (SNOMED CT)](https://www.snomed.org/snomed-ct/Use-SNOMED-CT) system, an international, medical terminology system and standard.
 
 ## Simple functionality ##
 ```python
