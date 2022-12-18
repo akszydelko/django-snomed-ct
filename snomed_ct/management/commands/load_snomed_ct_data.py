@@ -135,7 +135,7 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS('Successfully loaded SNOMED CT release.'))
 
         if options['icd10_map_location']:
-            records = [
+            records = []
             filename = os.path.join(options['icd10_map_location'], ICD_MAP_FILENAME)
             resolved_file_name = os.path.abspath(glob(filename)[0])
             self.stdout.write('Loading ICD 10 mapping file {}'.format(resolved_file_name))
