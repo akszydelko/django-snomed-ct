@@ -14,12 +14,16 @@ $ python manage.py load_snomed_ct_data --icd10_map_location=SNOMED_CT_to_ICD-10-
 
 The --icd10_map_location option can be excluded if you don't want to load the ICD10 SNOMED-CT mappings
 
+The --international option should be specified if working with an international distribution (otherwise, it defaults
+to assuming it is a US distribution).  The --snapshot option should be used with a snapshot distribution 
+(otherwise, it defaults to _Full_)
+
 ## Simple functionality ##
 ```python
 from snomed_ct.models import Concept, ICD10_Mapping, TextDefinition, Description, ISA
 ```
 
-You can fetch Concept instances from via REGEX matching their fully specified names using the **by_fully_specified_name** 
+You can fetch Concept instances via REGEX matching their fully specified names using the **by_fully_specified_name** 
 Class function.  They can also be fetched via full or partial string matching using the **term**="..string.." or 
 **term__icontains**=".. substring .." arguments.  The method also takes other fields of the **Description** model 
 (**active**, **language_code**, **type**, etc), passed as query arguments for filtering the Descriptions whose corresponding
@@ -30,8 +34,7 @@ concepts = Concept.by_fully_specified_name(term__iregex='aort.+stenosis')
 ```
 
 Similarly, concepts can be fetched via matching definitions (the **TextDefinition** model) made about them by the 
-**term** field (the textual definition), as well as to other fields by query filter argument, in a way similar to the 
-use of the **by_fully_specified_name** Concept class property described above 
+**by_definition** class function 
 
 ```python
 for c in Concept.by_definition(term__iregex='aort.+stenosis'):
@@ -124,10 +127,12 @@ for t in TextDefinition.objects.filter(concept__in=ICD10_Mapping.objects
 720568003|Brachydactyly and arterial hypertension syndrome (disorder) A rare genetic brachydactyly syndrome with the association of brachydactyly type E and hypertension (due to vascular or neurovascular anomalies) as well as the additional features of short stature and low birth weight (compared to non-affected family members), stocky build and a round face. The onset of hypertension is often in childhood and if untreated, most patients will have had a stroke by the age of 50.
 717824007|Progressive arterial occlusive disease, hypertension, heart defect, bone fragility, brachysyndactyly syndrome (disorder) Grange syndrome has characteristics of stenosis or occlusion of multiple arteries (including the renal, cerebral and abdominal vessels), hypertension, brachysyndactyly, syndactyly, increased bone fragility, and learning difficulties or borderline intellectual deficit. So far, the syndrome has been reported in six patients from three families. Congenital heart defects were also reported in some cases. The mode of transmission remains unclear, both autosomal recessive and autosomal dominant inheritance with decreased penetrance and parental gonadal mosaicism have been proposed.
 ```
+You can also iterate over all SNOMED-CT concepts mapped to an ICD-10 code substring: 
 
-The --international option should be specified if working with an international distribution (otherwise, it defaults
-to assuming it is a US distribution).  The --snapshot option should be used with a snapshot distribution 
-(otherwise, it defaults to _Full_)
+```python
+for map in ICD10_Mapping.objects.filter(map_target__icontains=icd_code, map_rule='TRUE'):
+..  snomed_ct_concept = map.referenced_component
+```
 
 ## ISA Transitive Closure ##
 
@@ -156,4 +161,23 @@ the more general SNOMED-CT concepts that a given concept is derived from that al
 
 ```python
 icd_mapped_concepts = c.transitive_isa.general_concepts.has_icd10_mappings()
+```
+
+Once you have loade the transitive closure and ICD mappings, given a concept instance, you can use the mehcanism for both
+to find all the ICD-10 codes mapped to concepts in the transitive closure of its ISA relation (i.e., all more general 
+SNOMED-CT concepts)
+
+This is a very useful way to *discover* ICD-10 codes relevant to a problem identified (possibly from its name or 
+definition) by leveraging the logical expressiveness of the mathematics used to capture the meaning of SNOMED-CT 
+terminology
+
+```python
+mappings = concept.icd10_mappings.all()
+if mappings.exists():
+..  logical_synonyms_ids = concept.transitive_isa.general_concepts.ids
+..  icd_mappings = c.transitive_isa.general_concepts.has_icd10_mappings().icd10_mappings()
+..  for code in set(icd_mappings.values_list('map_target', flat=True)):
+..      icd_code = icd10.find(code)
+..      if code.strip() and icd_code is not None:
+..          print(str(code))
 ```
