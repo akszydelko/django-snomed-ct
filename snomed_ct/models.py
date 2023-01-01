@@ -34,6 +34,10 @@ class CommonSNOMEDQuerySet(models.query.QuerySet):
     def active(self):
         return self.filter(active=True)
 
+    @property
+    def ids(self):
+        return self.values_list('pk', flat=True)
+
 class CommonSNOMEDModel(BaseSNOMEDCTModel):
     id = models.BigIntegerField(primary_key=True)
     effective_time = models.DateField(db_column='effectiveTime')
@@ -49,14 +53,19 @@ class CommonSNOMEDModel(BaseSNOMEDCTModel):
 
 class ConceptQuerySet(CommonSNOMEDQuerySet):
     def by_fully_specified_names(self, **kwargs):
-        return Concept.objects.filter(id__in=Description
-                                      .fully_specified_names()
-                                      .filter(**kwargs).values_list('concept__id', flat=True))
+        return self.filter(id__in=Description
+                           .fully_specified_names()
+                           .filter(**kwargs).values_list('concept__id', flat=True))
+    def has_icd10_mappings(self):
+        return self.filter(icd10_mappings__isnull=False)
 
+    def icd10_mappings(self):
+        return ICD10_Mapping.objects.filter(referenced_component_id__in=self.ids)
+    
 class ConceptManager(SNOMEDCTModelManager):
     use_for_related_fields = True
 
-    def by_full_specified_name(self, **kwargs):
+    def by_fully_specified_name(self, **kwargs):
         return self.get_queryset().filter(
             id__in=Description.fully_specified_names().filter(**kwargs).values_list('concept__id',
                                                                                     flat=True))
@@ -76,8 +85,8 @@ SNOMED_NAME_PATTERN = re.compile(r'(?P<name>[^\(]+)\s+\((?P<type>[^\(]+)\)')
 
 class Concept(CommonSNOMEDModel):
     DEFINITION_STATUS_CHOICES = (
-        (900000000000074008, 'Primitive'),
-        (900000000000073002, 'Defined')
+        (PRIMITIVE_CONCEPT, 'Primitive'),
+        (DEFINED_CONCEPT, 'Defined')
     )
     module = models.ForeignKey('self', on_delete=models.PROTECT, related_name='+',
                                db_index=False, db_column='moduleId')
@@ -126,16 +135,14 @@ class Concept(CommonSNOMEDModel):
         return cls.objects.get(id=_id, **kwargs)
 
     @classmethod
-    def by_full_specified_name(cls, **kwargs):
-        return cls.objects.filter(id__in=Description
-                                  .fully_specified_names()
-                                  .filter(**kwargs).values_list('concept__id', flat=True))
+    def by_fully_specified_name(cls, search_string, query_suffix='iregex'):
+        kwargs = {'descriptions__term__{}'.format(query_suffix): search_string}
+        return cls.objects.filter(**kwargs)
 
     @classmethod
-    def by_definition(cls, **kwargs):
-        return cls.objects.filter(id__in=TextDefinition.objects.all()
-                                  .filter(**kwargs).values_list('concept__id', flat=True))
-
+    def by_definition(cls, search_string, query_suffix='iregex'):
+        kwargs = {'text_definitions__term__{}'.format(query_suffix): search_string}
+        return cls.objects.filter(**kwargs)
 
     def __get_fully_specified_name(self, lang):
         return self.descriptions.get(
@@ -168,6 +175,35 @@ class Concept(CommonSNOMEDModel):
     def isa(self):
         return self.related_concepts(type_id=ISA)
 
+    def isa_transitive(self, chain=None, **kwargs):
+        chain = chain if chain else []
+        rt = [self.id]
+        if self.id != 404684003:
+            for concept in self.isa:
+                rt.extend(concept.isa_transitive(rt, **kwargs))
+        return chain + rt
+
+    @property
+    def specializations(self):
+        return Concept.objects.filter(id__in=self.inbound_relationships()
+                                      .filter(type_id=ISA).values_list('source', flat=True))
+
+    def specializations_transitive(self, chain=None, **kwargs):
+        chain = chain if chain else []
+        rt = []
+        for concept in self.specializations:
+            rt.append(concept.id)
+            rt.extend(concept.specializations_transitive(rt, **kwargs))
+        return chain + rt
+
+    @property
+    def part_of(self):
+        return self.related_concepts(type_id=PART_OF)
+
+    @property
+    def has_part(self):
+        return Concept.objects.filter(id__in=self.inbound_relationships()
+                                      .filter(type_id=PART_OF).values_list('source', flat=True))
     @property
     def finding_site(self):
         return self.related_concepts(type_id=FINDING_SITE)
@@ -185,11 +221,22 @@ DESCRIPTION_TYPES = {
     'Synonym': 900000000000013009
 }
 
+DEFINITION_TYPE = 900000000000550004
 
 class DescriptionQuerySet(CommonSNOMEDQuerySet):
     @property
     def fully_specified_names(self):
         return self.filter(type_id=DESCRIPTION_TYPES['Fully specified name'])
+
+    @property
+    def synonyms(self):
+        return self.filter(type_id=DESCRIPTION_TYPES['Synonym'])
+
+
+    @property
+    def terms(self):
+        return self.values_list('term', flat=True)
+
 
 class DescriptionManager(SNOMEDCTModelManager):
     use_for_related_fields = True
@@ -200,6 +247,44 @@ class DescriptionManager(SNOMEDCTModelManager):
     @property
     def fully_specified_names(self):
         return self.get_queryset().fully_specified_names
+
+    @property
+    def synonyms(self):
+        return self.get_queryset().synonyms
+
+class TransitiveClosureQuerySet(CommonSNOMEDQuerySet):
+    @property
+    def general_concepts(self):
+        return Concept.objects.filter(id__in=self.values_list('start', flat=True))
+
+    @property
+    def specific_concepts(self):
+        return Concept.objects.filter(id__in=self.values_list('end', flat=True))
+
+class TransitiveClosureManager(SNOMEDCTModelManager):
+    use_for_related_fields = True
+
+    def get_queryset(self):
+        return TransitiveClosureQuerySet(self.model)
+
+    @property
+    def general_concepts(self):
+        return self.get_queryset().general_concepts
+
+    @property
+    def specific_concepts(self):
+        return self.get_queryset().specific_concepts
+
+class TransitiveClosure(models.Model):
+    """
+    The transitive closure relationship materialized by snomed-database-loader is actually a 'subsumption'
+    relation between SNOMED-CT classes.  So, this is actually the inverse of the SNOMED-CT ISA relationship
+    (equivalent to OWL's subClassOf)
+    """
+    start = models.ForeignKey(Concept, on_delete=models.PROTECT, related_name='transitive_subsumes')
+    end = models.ForeignKey(Concept, on_delete=models.PROTECT, related_name='transitive_isa')
+
+    objects = TransitiveClosureManager()
 
 class Description(CommonSNOMEDModel):
     TYPE_CHOICES = (
@@ -233,11 +318,17 @@ class Description(CommonSNOMEDModel):
         return "%s: %s (%s)" % (self.language_code.upper(), self.term, self.get_active_display())
 
 
-class TextDefinitionQuerySet(CommonSNOMEDQuerySet):
-    pass
+class TextDefinitionQuerySet(DescriptionQuerySet):
+    @property
+    def definitions(self):
+        return self.filter(type_id=DEFINITION_TYPE)
 
-class TextDefinitionManager(SNOMEDCTModelManager):
+class TextDefinitionManager(DescriptionManager):
     use_for_related_fields = True
+
+    @property
+    def definitions(self):
+        return self.get_queryset().definitions
 
     def get_queryset(self):
         return TextDefinitionQuerySet(self.model)
@@ -245,7 +336,8 @@ class TextDefinitionManager(SNOMEDCTModelManager):
 class TextDefinition(CommonSNOMEDModel):
     module = models.ForeignKey(Concept, on_delete=models.PROTECT, related_name='+',
                                db_index=False, db_column='moduleId')
-    concept = models.ForeignKey(Concept, on_delete=models.PROTECT, db_column='conceptId')
+    concept = models.ForeignKey(Concept, on_delete=models.PROTECT, db_column='conceptId',
+                                related_name='text_definitions')
     language_code = models.CharField(max_length=3, db_column='languageCode')
     type = models.ForeignKey(Concept, on_delete=models.PROTECT, choices=Description.TYPE_CHOICES,
                              db_index=False, db_column='typeId', related_name='+')
@@ -262,6 +354,7 @@ class TextDefinition(CommonSNOMEDModel):
 ISA = 116680003
 FINDING_SITE = 363698007
 ASSOCIATED_MORPHOLOGY = 116676008
+PART_OF = 123005000
 
 class RelationshipQuerySet(CommonSNOMEDQuerySet):
     pass
@@ -275,7 +368,6 @@ class RelationshipManager(SNOMEDCTModelManager):
 ATTRIBUTE_HUMAN_READABLE_NAMES = {
     363698007: 'is located in some',
     116676008: 'has morphology',
-    # 0: '',
 }
 
 class Relationship(CommonSNOMEDModel):
@@ -356,7 +448,7 @@ class Relationship(CommonSNOMEDModel):
         (246100006, 'Onset'),
         (260908002, 'Course'),
         (260858005, 'Extent'),
-        (123005000, 'Part of'),
+        (PART_OF, 'Part of'),
         (367346004, 'Measures'),
         (246267002, 'Location'),
         (260669005, 'Approach'),
@@ -405,15 +497,6 @@ class Relationship(CommonSNOMEDModel):
 
     def __str__(self):
         return f"{self.source} - {self.type} -> {self.destination}"
-
-# class Relationship(BaseSNOMEDCTModel):
-#     objects = SNOMEDCTModelManager()
-#
-#     class Meta:
-#         managed = False
-#         db_table = 'sct2_stated_relationship'
-#         unique_together = (('id', 'effective_time', 'active'),)
-
 
 ############################
 ### Reference set models ###
@@ -511,7 +594,7 @@ class ExtendedMapRefSet(CommonSNOMEDModel):
                                db_index=False, db_column='moduleId')
     refset = models.ForeignKey(Concept, on_delete=models.PROTECT, related_name='+',
                                db_column='refsetId')
-    referenced_component = models.ForeignKey(Concept, on_delete=models.PROTECT, related_name='+',
+    referenced_component = models.ForeignKey(Concept, on_delete=models.PROTECT, #related_name='+',
                                              db_column='referencedComponentId')
     map_group = models.SmallIntegerField(db_column='mapGroup')
     map_priority = models.SmallIntegerField(db_column='mapPriority')
@@ -541,6 +624,8 @@ class ICD10_MappingManager(SNOMEDCTModelManager):
 
 class ICD10_Mapping(ExtendedMapRefSet):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    referenced_component = models.ForeignKey(Concept, on_delete=models.PROTECT, related_name='icd10_mappings',
+                                             db_column='referencedComponentId')
     referenced_component_name = models.TextField(blank=True, null=True, db_column='referencedComponentName')
     map_target_name = models.TextField(blank=True, null=True, db_column='mapTargetName')
     map_category_name = models.TextField(blank=True, null=True, db_column='mapCategoryName')

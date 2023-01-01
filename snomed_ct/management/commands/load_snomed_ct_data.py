@@ -1,8 +1,10 @@
 import os
 import re
 import csv
-import itertools
 import io
+import sys
+
+from psycopg2.errors import BadCopyFileFormat
 
 try:
     from tqdm import tqdm
@@ -15,7 +17,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction, connection
 from glob import glob
 
-from snomed_ct.models import Concept, Description, TextDefinition, Relationship, ICD10_Mapping
+from snomed_ct.models import Concept, Description, TextDefinition, Relationship, ICD10_Mapping, TransitiveClosure
 
 INTERNATIONAL_FILENAME_COMPONENT = '_INT_'
 US_FILENAME_COMPONENT = '_US'
@@ -48,11 +50,13 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument('snomed_ct_location', type=str)
-        parser.add_argument('--icd10_map_location', default=False)
+        parser.add_argument('--icd10_map_location', default=None)
+        parser.add_argument('--transitive_closure_location', default=None)
         parser.add_argument('--international', action='store_true', default=False)
         parser.add_argument('--snapshot', action='store_true', default=False)
 
     def handle(self, *args, **options):
+        csv.field_size_limit(sys.maxsize)
         with transaction.atomic():
             dist_type = 'Snapshot' if options['snapshot'] else 'Full'
             region_type = INTERNATIONAL_FILENAME_COMPONENT if options['international'] else US_FILENAME_COMPONENT
@@ -66,7 +70,7 @@ class Command(BaseCommand):
             records = []
             metaconcept_ids = set()
             with open(resolved_file_name, newline='') as csvfile:
-                row_dicts = list(csv.DictReader(csvfile, delimiter='\t'))
+                row_dicts = list(csv.DictReader(csvfile, quoting=csv.QUOTE_NONE, delimiter='\t'))
                 for row_dict in row_dicts:
                     metaconcept_ids.update([row_dict['moduleId'], row_dict['definitionStatusId']])
                 self.stdout.write("Creating metaconcepts (definition status & module)")
@@ -85,13 +89,21 @@ class Command(BaseCommand):
                            columns=['id', 'effectiveTime', 'active', 'moduleId', 'definitionStatusId'])
             self.stdout.write("Loaded remaining {:,} concepts, collecting descriptions".format(len(records)))
 
+            if options['transitive_closure_location']:
+                resolved_file_name = os.path.abspath(options['transitive_closure_location'])
+                self.stdout.write('Loading ISA transitice closure file {}'.format(resolved_file_name))
+
+                with open(resolved_file_name) as f:
+                    cursor.copy_from(f, TransitiveClosure.objects.model._meta.db_table, sep=',', columns=['start_id', 'end_id'])
+                self.stdout.write(self.style.SUCCESS("Loaded"))
+
             records = []
             filename = os.path.join(options['snomed_ct_location'], 'Terminology',
                                 DESCRIPTION_FILENAME_TEMPLATE.format(dist_type, region_type))
             resolved_file_name = os.path.abspath(glob(filename)[0])
 
             with open(resolved_file_name, newline='') as csvfile:
-                records.extend(self.id_deprecations(csv.DictReader(csvfile, delimiter='\t'),
+                records.extend(self.id_deprecations(csv.DictReader(csvfile, quoting=csv.QUOTE_NONE, delimiter='\t'),
                                                     remaining_columns=['moduleId', 'conceptId', 'languageCode',
                                                                        'typeId', 'term', 'caseSignificanceId']))
             self.stdout.write('Loading description file {} ({:,} records)'.format(resolved_file_name,
@@ -107,7 +119,7 @@ class Command(BaseCommand):
             self.stdout.write('Loading text definition file {}'.format(resolved_file_name))
 
             with open(resolved_file_name, newline='') as csvfile:
-                records.extend(self.id_deprecations(csv.DictReader(csvfile, delimiter='\t'),
+                records.extend(self.id_deprecations(csv.DictReader(csvfile, quoting=csv.QUOTE_NONE, delimiter='\t'),
                                                     remaining_columns=['moduleId', 'conceptId', 'languageCode',
                                                                        'typeId', 'term', 'caseSignificanceId']))
             self.copy_from(cursor, records, TextDefinition.objects.model._meta.db_table,
@@ -123,7 +135,7 @@ class Command(BaseCommand):
             self.stdout.write('Loading relationship file {}'.format(resolved_file_name))
 
             with open(resolved_file_name, newline='') as csvfile:
-                records.extend(self.id_deprecations(csv.DictReader(csvfile, delimiter='\t'),
+                records.extend(self.id_deprecations(csv.DictReader(csvfile, quoting=csv.QUOTE_NONE, delimiter='\t'),
                                                     remaining_columns=['moduleId', 'sourceId', 'destinationId',
                                                                        'relationshipGroup', 'typeId',
                                                                        'characteristicTypeId', 'modifierId']))
@@ -141,7 +153,7 @@ class Command(BaseCommand):
             self.stdout.write('Loading ICD 10 mapping file {}'.format(resolved_file_name))
 
             with open(resolved_file_name, newline='') as csvfile:
-                records.extend(self.id_deprecations(csv.DictReader(csvfile, delimiter='\t'),
+                records.extend(self.id_deprecations(csv.DictReader(csvfile, quoting=csv.QUOTE_NONE, delimiter='\t'),
                                                     remaining_columns=['moduleId', 'refsetId', 'referencedComponentId',
                                                                        'referencedComponentName', 'mapGroup',
                                                                        'mapPriority', 'mapRule', 'mapAdvice',
@@ -153,13 +165,10 @@ class Command(BaseCommand):
                                     'mapTarget', 'mapTargetName', 'correlationId', 'mapCategoryId', 'mapCategoryName'])
             self.stdout.write("Done")
 
-    def copy_from(self, cursor, records, table_name, sep='\t', columns=None):
+    def copy_from(self, cursor, records, table_name, sep='!', columns=None):
         csv_file_like_object = io.StringIO()
         for items in tqdm(records):
-            if not any([val for val in items if not isinstance(val, (bool, date)) and '\t' in val]):
-                csv_file_like_object.write(sep.join(map(normalize_delimited_value, items)) + '\r')
-            else:
-                self.stdout.write(self.style.WARNING('Skipping {}'.format(items)))
+            csv_file_like_object.write(sep.join(map(normalize_delimited_value, items)) + '\r')
         csv_file_like_object.seek(0)
         cursor.copy_from(csv_file_like_object, table_name, sep=sep, columns=columns)
 
