@@ -1,3 +1,4 @@
+from enum import Enum
 import uuid
 import re
 from django.core.cache import caches
@@ -83,6 +84,13 @@ DEFINITION_STATUS_MAPPING = {
 
 SNOMED_NAME_PATTERN = re.compile(r'(?P<name>[^\(]+)\s+\((?P<type>[^\(]+)\)')
 
+class TextSearchTypes(Enum):
+    CASE_INSENSITIVE_CONTAINS = 1
+    CASE_SENSITIVE_CONTAINS = 2
+    CASE_SENSITIVE_REGEX = 2
+    CASE_INSENSITIVE_REGEX = 3
+    POSTGRES_FULL_TEXT_SEARCH = 4
+
 class Concept(CommonSNOMEDModel):
     DEFINITION_STATUS_CHOICES = (
         (PRIMITIVE_CONCEPT, 'Primitive'),
@@ -135,12 +143,23 @@ class Concept(CommonSNOMEDModel):
         return cls.objects.get(id=_id, **kwargs)
 
     @classmethod
-    def by_fully_specified_name(cls, search_string, query_suffix='iregex'):
-        kwargs = {'descriptions__term__{}'.format(query_suffix): search_string}
-        return cls.objects.filter(**kwargs)
+    def by_fully_specified_name(cls, search_string, search_type=TextSearchTypes.CASE_INSENSITIVE_CONTAINS):
+        query_suffix = ('iregex' if search_type == TextSearchTypes.CASE_INSENSITIVE_REGEX else
+                        'regex' if search_type == TextSearchTypes.CASE_SENSITIVE_REGEX else
+                        'contains' if search_type == TextSearchTypes.CASE_SENSITIVE_CONTAINS else
+                        'icontains' if search_type == TextSearchTypes.CASE_INSENSITIVE_CONTAINS else
+                        'search')
+        kwargs = {'term__{}'.format(query_suffix): search_string,
+                  'type_id': DESCRIPTION_TYPES['Fully specified name']}
+        return cls.objects.filter(id__in=Description.objects.filter(**kwargs).values_list('concept_id', flat=True))
 
     @classmethod
-    def by_definition(cls, search_string, query_suffix='iregex'):
+    def by_definition(cls, search_string, search_type=TextSearchTypes.CASE_INSENSITIVE_CONTAINS):
+        query_suffix = ('iregex' if search_type == TextSearchTypes.CASE_INSENSITIVE_REGEX else
+                        'regex' if search_type == TextSearchTypes.CASE_SENSITIVE_REGEX else
+                        'contains' if search_type == TextSearchTypes.CASE_SENSITIVE_CONTAINS else
+                        'icontains' if search_type == TextSearchTypes.CASE_INSENSITIVE_CONTAINS else
+                        'search')
         kwargs = {'text_definitions__term__{}'.format(query_suffix): search_string}
         return cls.objects.filter(**kwargs)
 

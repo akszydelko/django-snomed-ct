@@ -23,21 +23,32 @@ to assuming it is a US distribution).  The --snapshot option should be used with
 from snomed_ct.models import Concept, ICD10_Mapping, TextDefinition, Description, ISA
 ```
 
-You can fetch Concept instances via REGEX matching their fully specified names using the **by_fully_specified_name** 
-Class function.  They can also be fetched via full or partial string matching using the **term**="..string.." or 
-**term__icontains**=".. substring .." arguments.  The method also takes other fields of the **Description** model 
-(**active**, **language_code**, **type**, etc), passed as query arguments for filtering the Descriptions whose corresponding
-concepts are returned
+You can fetch Concept instances via various types of string matching:
+* Regular expression matching (case sensitive or insensitive), using Django's [regex](https://docs.djangoproject.com/en/3.2/ref/models/querysets/#regex) and [iregex](https://docs.djangoproject.com/en/3.2/ref/models/querysets/#iregex) field lookups respectively
+* Text substring matching (case sensitive or insensitive), using Django's [contains](https://docs.djangoproject.com/en/3.2/ref/models/querysets/#contains) and [icontains](https://docs.djangoproject.com/en/3.2/ref/models/querysets/#icontains) field lookups respectively 
+* PostgreSQL full text search, using Django's [search](https://docs.djangoproject.com/en/3.2/ref/contrib/postgres/search/#the-search-lookup) lookup for PostgreSQL 
+
+The Concept.**by_fully_specified_name** class method is how this is done and it takes two arguments: the search string and 
+one of the following attributes on the TextSearchTypes class in snomed_ct.models:
+
+* CASE_INSENSITIVE_CONTAINS
+* CASE_SENSITIVE_CONTAINS
+* CASE_SENSITIVE_REGEX
+* CASE_INSENSITIVE_REGEX
+* POSTGRES_FULL_TEXT_SEARCH
+
+Each of these corresponds to the 5 ways the string search will be performed.  By default, and if not specified, the 
+search will be performed using the case insensitive substring matching method:  
 
 ```python
-concepts = Concept.by_fully_specified_name(term__iregex='aort.+stenosis')
+concepts = Concept.by_fully_specified_name('aortic stenosis')
 ```
 
 Similarly, concepts can be fetched via matching definitions (the **TextDefinition** model) made about them by the 
-**by_definition** class function 
+Concept.**by_definition** class method, which has the same method signature and arguments as by_fully_specified_name .
 
 ```python
-for c in Concept.by_definition(term__iregex='aort.+stenosis'):
+for c in Concept.by_definition('aort.+stenosis', search_type=TextSearchTypes.CASE_SENSITIVE_REGEX):
 ..  print(c)
 ```
 
@@ -151,8 +162,8 @@ transitive closure file to write out.  Once this file is written, the load_snome
 Once the transitive closure file has been loaded, you can return all the concepts related to a given concept via the
 **transitive_isa** method which returns a TransitiveClosureQuerySet.
 
-TransitiveClosure is the transitive closure of the 'subsumption' relationship (the inverse of ISA) materialized 
-by **snomed-database-loader**.
+The **TransitiveClosure** model is the transitive closure of the 'subsumption' relationship (the inverse of ISA) materialized 
+by the SNOMED CT Database Scripts.
 
 Each TransitiveClosureQuerySet instance, has a **general_concepts** method that
 returns a ConceptQuerySet of _all_ the general concepts (those that generalise the given concept) and a **specific_concepts**
