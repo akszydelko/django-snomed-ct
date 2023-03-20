@@ -4,12 +4,6 @@ import re
 from django.core.cache import caches
 from django.db import models
 
-from django.contrib.postgres.search import SearchVectorField
-
-from pgsearch.fields import TSVectorField
-from pgsearch.managers import ReadOnlySearchManager
-
-
 from .manager import SNOMEDCTModelManager
 
 # Get the cache shortcut
@@ -154,6 +148,16 @@ class Concept(CommonSNOMEDModel):
         return cls.objects.filter(id__in=Description.objects.filter(**kwargs).values_list('concept_id', flat=True))
 
     @classmethod
+    def by_description(cls, search_string, search_type=TextSearchTypes.CASE_INSENSITIVE_CONTAINS):
+        query_suffix = ('iregex' if search_type == TextSearchTypes.CASE_INSENSITIVE_REGEX else
+                        'regex' if search_type == TextSearchTypes.CASE_SENSITIVE_REGEX else
+                        'contains' if search_type == TextSearchTypes.CASE_SENSITIVE_CONTAINS else
+                        'icontains' if search_type == TextSearchTypes.CASE_INSENSITIVE_CONTAINS else
+                        'search')
+        kwargs = {'term__{}'.format(query_suffix): search_string}
+        return cls.objects.filter(id__in=Description.objects.filter(**kwargs).values_list('concept_id', flat=True))
+
+    @classmethod
     def by_definition(cls, search_string, search_type=TextSearchTypes.CASE_INSENSITIVE_CONTAINS):
         query_suffix = ('iregex' if search_type == TextSearchTypes.CASE_INSENSITIVE_REGEX else
                         'regex' if search_type == TextSearchTypes.CASE_SENSITIVE_REGEX else
@@ -197,7 +201,7 @@ class Concept(CommonSNOMEDModel):
     def isa_transitive(self, chain=None, **kwargs):
         chain = chain if chain else []
         rt = [self.id]
-        if self.id != 404684003:
+        if self.id != 404684003 and self.id not in chain:
             for concept in self.isa:
                 rt.extend(concept.isa_transitive(rt, **kwargs))
         return chain + rt
@@ -646,7 +650,7 @@ class ICD10_Mapping(ExtendedMapRefSet):
     referenced_component = models.ForeignKey(Concept, on_delete=models.PROTECT, related_name='icd10_mappings',
                                              db_column='referencedComponentId')
     referenced_component_name = models.TextField(blank=True, null=True, db_column='referencedComponentName')
-    map_target_name = models.TextField(blank=True, null=True, db_column='mapTargetName')
+    map_target_name = models.TextField(blank=True, db_index=True, null=True, db_column='mapTargetName')
     map_category_name = models.TextField(blank=True, null=True, db_column='mapCategoryName')
 
     objects = ICD10_MappingManager()
@@ -686,11 +690,6 @@ class TermBasedView(BaseSNOMEDCTModel):
     concept = models.ForeignKey(Concept, on_delete=models.PROTECT, related_name='+')
     concpet_active = models.BooleanField()
     concpet_definition_status = models.ForeignKey(Concept, on_delete=models.PROTECT, choices=Concept.DEFINITION_STATUS_CHOICES, related_name='+')
-    search_term = TSVectorField()
-
-    objects = ReadOnlySearchManager(
-        search_field='search_term'
-    )
 
     class Meta:
         db_table = 'terms_based_view'

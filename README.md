@@ -165,7 +165,7 @@ Once the transitive closure file has been loaded, you can return all the concept
 The **TransitiveClosure** model is the transitive closure of the 'subsumption' relationship (the inverse of ISA) materialized 
 by the SNOMED CT Database Scripts.
 
-Each TransitiveClosureQuerySet instance, has a **general_concepts** method that
+Each TransitiveClosureQuerySet instance, has a **general_concepts** property that
 returns a ConceptQuerySet of _all_ the general concepts (those that generalise the given concept) and a **specific_concepts**
 method which returns _all_ the specific concepts from the transitive closure.  So the following will return all 
 the more general SNOMED-CT concepts that a given concept is derived from that also have ICD mappings:
@@ -174,7 +174,7 @@ the more general SNOMED-CT concepts that a given concept is derived from that al
 icd_mapped_concepts = c.transitive_isa.general_concepts.has_icd10_mappings()
 ```
 
-Once you have loade the transitive closure and ICD mappings, given a concept instance, you can use the mehcanism for both
+Once you have loaded the transitive closure and ICD mappings, given a concept instance, you can use the mehcanism for both
 to find all the ICD-10 codes mapped to concepts in the transitive closure of its ISA relation (i.e., all more general 
 SNOMED-CT concepts)
 
