@@ -58,7 +58,7 @@ class ConceptQuerySet(CommonSNOMEDQuerySet):
 
     @property
     def fully_specified_names(self):
-        Description.fully_specified_names().filter(concept__in=self).values_list('term', flat=True)
+        return Description.fully_specified_names().filter(concept__in=self).values_list('term', flat=True)
 
     def has_icd10_mappings(self):
         return self.filter(icd10_mappings__isnull=False)
