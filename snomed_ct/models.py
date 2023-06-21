@@ -47,10 +47,19 @@ class CommonSNOMEDModel(BaseSNOMEDCTModel):
 ##########################
 
 class ConceptQuerySet(CommonSNOMEDQuerySet):
+    @property
+    def ids(self):
+        return self.values_list('pk', flat=True)
+
     def by_fully_specified_names(self, **kwargs):
         return self.filter(id__in=Description
                            .fully_specified_names()
                            .filter(**kwargs).values_list('concept__id', flat=True))
+
+    @property
+    def fully_specified_names(self):
+        Description.fully_specified_names().filter(concept__in=self).values_list('term', flat=True)
+
     def has_icd10_mappings(self):
         return self.filter(icd10_mappings__isnull=False)
 
@@ -64,6 +73,9 @@ class ConceptManager(SNOMEDCTModelManager):
         return self.get_queryset().filter(
             id__in=Description.fully_specified_names().filter(**kwargs).values_list('concept__id',
                                                                                     flat=True))
+    def mapped(self):
+        return self.get_queryset().filter(pk__in=ICD10_Mapping.objects.all().values_list('referenced_component__pk',
+                                                                                         flat=True))
 
     def get_queryset(self):
         return ConceptQuerySet(self.model)
@@ -84,6 +96,23 @@ class TextSearchTypes(Enum):
     CASE_SENSITIVE_REGEX = 2
     CASE_INSENSITIVE_REGEX = 3
     POSTGRES_FULL_TEXT_SEARCH = 4
+
+    @classmethod
+    def get_search_query_suffix(cls, search_type):
+        query_suffix = ('iregex' if search_type == TextSearchTypes.CASE_INSENSITIVE_REGEX else
+                        'regex' if search_type == TextSearchTypes.CASE_SENSITIVE_REGEX else
+                        'contains' if search_type == TextSearchTypes.CASE_SENSITIVE_CONTAINS else
+                        'icontains' if search_type == TextSearchTypes.CASE_INSENSITIVE_CONTAINS else
+                        'search')
+        return query_suffix
+
+def GetSearchQuerySuffix(search_type):
+    query_suffix = ('iregex' if search_type == TextSearchTypes.CASE_INSENSITIVE_REGEX else
+                    'regex' if search_type == TextSearchTypes.CASE_SENSITIVE_REGEX else
+                    'contains' if search_type == TextSearchTypes.CASE_SENSITIVE_CONTAINS else
+                    'icontains' if search_type == TextSearchTypes.CASE_INSENSITIVE_CONTAINS else
+                    'search')
+    return query_suffix
 
 class Concept(CommonSNOMEDModel):
     DEFINITION_STATUS_CHOICES = (
@@ -127,7 +156,6 @@ class Concept(CommonSNOMEDModel):
     def fully_specified_name_no_type(self):
         return SNOMED_NAME_PATTERN.search(self.get_fully_specified_name().term).group('name')
 
-
     @property
     def fully_specified_name(self):
         return self.get_fully_specified_name().term
@@ -137,33 +165,28 @@ class Concept(CommonSNOMEDModel):
         return cls.objects.get(id=_id, **kwargs)
 
     @classmethod
+    def by_fully_specified_name_and_mapped(cls, search_string, search_type=TextSearchTypes.CASE_INSENSITIVE_CONTAINS):
+        query_suffix = GetSearchQuerySuffix(search_type)
+        kwargs = {'term__{}'.format(query_suffix): search_string,
+                  'type_id': DESCRIPTION_TYPES['Fully specified name']}
+        return cls.objects.mapped().filter(id__in=Description.objects.filter(**kwargs).values_list('concept_id',
+                                                                                                   flat=True))
+    @classmethod
     def by_fully_specified_name(cls, search_string, search_type=TextSearchTypes.CASE_INSENSITIVE_CONTAINS):
-        query_suffix = ('iregex' if search_type == TextSearchTypes.CASE_INSENSITIVE_REGEX else
-                        'regex' if search_type == TextSearchTypes.CASE_SENSITIVE_REGEX else
-                        'contains' if search_type == TextSearchTypes.CASE_SENSITIVE_CONTAINS else
-                        'icontains' if search_type == TextSearchTypes.CASE_INSENSITIVE_CONTAINS else
-                        'search')
+        query_suffix = GetSearchQuerySuffix(search_type)
         kwargs = {'term__{}'.format(query_suffix): search_string,
                   'type_id': DESCRIPTION_TYPES['Fully specified name']}
         return cls.objects.filter(id__in=Description.objects.filter(**kwargs).values_list('concept_id', flat=True))
 
     @classmethod
     def by_description(cls, search_string, search_type=TextSearchTypes.CASE_INSENSITIVE_CONTAINS):
-        query_suffix = ('iregex' if search_type == TextSearchTypes.CASE_INSENSITIVE_REGEX else
-                        'regex' if search_type == TextSearchTypes.CASE_SENSITIVE_REGEX else
-                        'contains' if search_type == TextSearchTypes.CASE_SENSITIVE_CONTAINS else
-                        'icontains' if search_type == TextSearchTypes.CASE_INSENSITIVE_CONTAINS else
-                        'search')
+        query_suffix = GetSearchQuerySuffix(search_type)
         kwargs = {'term__{}'.format(query_suffix): search_string}
         return cls.objects.filter(id__in=Description.objects.filter(**kwargs).values_list('concept_id', flat=True))
 
     @classmethod
     def by_definition(cls, search_string, search_type=TextSearchTypes.CASE_INSENSITIVE_CONTAINS):
-        query_suffix = ('iregex' if search_type == TextSearchTypes.CASE_INSENSITIVE_REGEX else
-                        'regex' if search_type == TextSearchTypes.CASE_SENSITIVE_REGEX else
-                        'contains' if search_type == TextSearchTypes.CASE_SENSITIVE_CONTAINS else
-                        'icontains' if search_type == TextSearchTypes.CASE_INSENSITIVE_CONTAINS else
-                        'search')
+        query_suffix = GetSearchQuerySuffix(search_type)
         kwargs = {'text_definitions__term__{}'.format(query_suffix): search_string}
         return cls.objects.filter(**kwargs)
 
@@ -205,6 +228,9 @@ class Concept(CommonSNOMEDModel):
             for concept in self.isa:
                 rt.extend(concept.isa_transitive(rt, **kwargs))
         return chain + rt
+
+    def transitive_general_concept(self):
+        return self.transitive_isa.general_concepts
 
     @property
     def specializations(self):
@@ -601,9 +627,9 @@ class ComplexMapRefSet(CommonSNOMEDModel):
     referenced_component = models.ForeignKey(Concept, on_delete=models.PROTECT, related_name='+')
     map_group = models.SmallIntegerField()
     map_priority = models.SmallIntegerField()
-    map_rule = models.TextField(blank=True, null=True)
-    map_advice = models.TextField(blank=True, null=True)
-    map_target = models.TextField(blank=True, null=True)
+    map_rule = models.TextField(default="")
+    map_advice = models.TextField(default="")
+    map_target = models.TextField(default="")
     correlation = models.ForeignKey(Concept, on_delete=models.PROTECT, related_name='+')
 
     objects = SNOMEDCTModelManager()
@@ -621,9 +647,9 @@ class ExtendedMapRefSet(CommonSNOMEDModel):
                                              db_column='referencedComponentId')
     map_group = models.SmallIntegerField(db_column='mapGroup')
     map_priority = models.SmallIntegerField(db_column='mapPriority')
-    map_rule = models.TextField(blank=True, null=True, db_column='mapRule')
-    map_advice = models.TextField(blank=True, null=True, db_column='mapAdvice')
-    map_target = models.TextField(blank=True, null=True, db_column='mapTarget')
+    map_rule = models.TextField(default="", db_column='mapRule')
+    map_advice = models.TextField(default="", db_column='mapAdvice')
+    map_target = models.TextField(default="", db_column='mapTarget')
     correlation = models.ForeignKey(Concept, on_delete=models.PROTECT, related_name='+', blank=True,
                                     db_column='correlationId', null=True)
     map_category = models.ForeignKey(Concept, on_delete=models.PROTECT, related_name='+', blank=True, null=True,
@@ -639,19 +665,27 @@ class ICD10_MappingQuerySet(CommonSNOMEDQuerySet):
     def concepts(self):
         return Concept.objects.filter(id__in=self.values_list('referenced_component', flat=True))
 
-class ICD10_MappingManager(SNOMEDCTModelManager):
-    use_for_related_fields = True
+    def get_icd_codes(self):
+        return self.values_list('map_target', flat=True)
 
+    @property
+    def concepts(self):
+        return Concept.objects.filter(id__in=self.values_list('referenced_component', flat=True))
+class ICD10_MappingManager(models.Manager):
     def get_queryset(self):
         return ICD10_MappingQuerySet(self.model)
+
+    def by_fully_specified_name(self, search_string, search_type=TextSearchTypes.CASE_INSENSITIVE_CONTAINS):
+        return self.get_queryset().filter(
+            referenced_component__in=Concept.by_fully_specified_name(search_string, search_type=search_type))
 
 class ICD10_Mapping(ExtendedMapRefSet):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     referenced_component = models.ForeignKey(Concept, on_delete=models.PROTECT, related_name='icd10_mappings',
                                              db_column='referencedComponentId')
-    referenced_component_name = models.TextField(blank=True, null=True, db_column='referencedComponentName')
-    map_target_name = models.TextField(blank=True, db_index=True, null=True, db_column='mapTargetName')
-    map_category_name = models.TextField(blank=True, null=True, db_column='mapCategoryName')
+    referenced_component_name = models.TextField(default="", db_column='referencedComponentName')
+    map_target_name = models.TextField(default="", db_index=True, db_column='mapTargetName')
+    map_category_name = models.TextField(default="", db_column='mapCategoryName')
 
     objects = ICD10_MappingManager()
 

@@ -54,116 +54,121 @@ class Command(BaseCommand):
         parser.add_argument('--transitive_closure_location', default=None)
         parser.add_argument('--international', action='store_true', default=False)
         parser.add_argument('--snapshot', action='store_true', default=False)
+        parser.add_argument('--mapping_only', action='store_true', default=False)
 
     def handle(self, *args, **options):
         csv.field_size_limit(sys.maxsize)
         with transaction.atomic():
-            dist_type = 'Snapshot' if options['snapshot'] else 'Full'
-            region_type = INTERNATIONAL_FILENAME_COMPONENT if options['international'] else US_FILENAME_COMPONENT
-            cursor = connection.cursor()
-            filename = os.path.join(options['snomed_ct_location'], 'Terminology',
-                                    CONCEPT_FILENAME_TEMPLATE.format(dist_type, region_type))
+            if not options['mapping_only']:
+                dist_type = 'Snapshot' if options['snapshot'] else 'Full'
+                region_type = INTERNATIONAL_FILENAME_COMPONENT if options['international'] else US_FILENAME_COMPONENT
+                cursor = connection.cursor()
+                filename = os.path.join(options['snomed_ct_location'], 'Terminology',
+                                        CONCEPT_FILENAME_TEMPLATE.format(dist_type, region_type))
 
-            resolved_file_name = os.path.abspath(glob(filename)[0])
-            self.stdout.write('Loading concept file {}'.format(resolved_file_name))
+                resolved_file_name = os.path.abspath(glob(filename)[0])
+                self.stdout.write('Loading concept file {}'.format(resolved_file_name))
 
-            records = []
-            metaconcept_ids = set()
-            with open(resolved_file_name, newline='') as csvfile:
-                row_dicts = list(csv.DictReader(csvfile, quoting=csv.QUOTE_NONE, delimiter='\t'))
-                for row_dict in row_dicts:
-                    metaconcept_ids.update([row_dict['moduleId'], row_dict['definitionStatusId']])
-                self.stdout.write("Creating metaconcepts (definition status & module)")
-                for row_dict in tqdm([row_dict for row_dict in row_dicts
-                                      if row_dict['id'] in metaconcept_ids]):
-                    effectiveTime = datetime.strptime(row_dict['effectiveTime'], '%Y%m%d').date()
-                    records.append((row_dict['id'], effectiveTime, row_dict['active'] == '1', row_dict['moduleId'],
-                                    row_dict['definitionStatusId']))
+                records = []
+                metaconcept_ids = set()
+                with open(resolved_file_name, newline='') as csvfile:
+                    row_dicts = list(csv.DictReader(csvfile, quoting=csv.QUOTE_NONE, delimiter='\t'))
+                    for row_dict in row_dicts:
+                        metaconcept_ids.update([row_dict['moduleId'], row_dict['definitionStatusId']])
+                    self.stdout.write("Creating metaconcepts (definition status & module)")
+                    for row_dict in tqdm([row_dict for row_dict in row_dicts
+                                          if row_dict['id'] in metaconcept_ids]):
+                        effectiveTime = datetime.strptime(row_dict['effectiveTime'], '%Y%m%d').date()
+                        records.append((row_dict['id'], effectiveTime, row_dict['active'] == '1', row_dict['moduleId'],
+                                        row_dict['definitionStatusId']))
 
-                self.stdout.write("Prepping bulk creation of other concepts")
-                records.extend(self.id_deprecations([rd for rd in row_dicts if rd['id'] not in metaconcept_ids],
-                                                    remaining_columns=['moduleId', 'definitionStatusId']))
+                    self.stdout.write("Prepping bulk creation of other concepts")
+                    records.extend(self.id_deprecations([rd for rd in row_dicts if rd['id'] not in metaconcept_ids],
+                                                        remaining_columns=['moduleId', 'definitionStatusId']))
 
-            self.stdout.write("Loading ..")
-            self.copy_from(cursor, records, Concept.objects.model._meta.db_table,
-                           columns=['id', 'effectiveTime', 'active', 'moduleId', 'definitionStatusId'])
-            self.stdout.write("Loaded remaining {:,} concepts, collecting descriptions".format(len(records)))
+                self.stdout.write("Loading ..")
+                self.copy_from(cursor, records, Concept.objects.model._meta.db_table,
+                               columns=['id', 'effectiveTime', 'active', 'moduleId', 'definitionStatusId'])
+                self.stdout.write("Loaded remaining {:,} concepts, collecting descriptions".format(len(records)))
 
-            if options['transitive_closure_location']:
-                resolved_file_name = os.path.abspath(options['transitive_closure_location'])
-                self.stdout.write('Loading ISA transitice closure file {}'.format(resolved_file_name))
+                if options['transitive_closure_location']:
+                    resolved_file_name = os.path.abspath(options['transitive_closure_location'])
+                    self.stdout.write('Loading ISA transitice closure file {}'.format(resolved_file_name))
 
-                with open(resolved_file_name) as f:
-                    cursor.copy_from(f, TransitiveClosure.objects.model._meta.db_table, sep=',', columns=['start_id', 'end_id'])
-                self.stdout.write(self.style.SUCCESS("Loaded"))
+                    with open(resolved_file_name) as f:
+                        cursor.copy_from(f, TransitiveClosure.objects.model._meta.db_table, sep=',', columns=['start_id', 'end_id'])
+                    self.stdout.write(self.style.SUCCESS("Loaded"))
 
-            records = []
-            filename = os.path.join(options['snomed_ct_location'], 'Terminology',
-                                DESCRIPTION_FILENAME_TEMPLATE.format(dist_type, region_type))
-            resolved_file_name = os.path.abspath(glob(filename)[0])
+                records = []
+                filename = os.path.join(options['snomed_ct_location'], 'Terminology',
+                                    DESCRIPTION_FILENAME_TEMPLATE.format(dist_type, region_type))
+                resolved_file_name = os.path.abspath(glob(filename)[0])
 
-            with open(resolved_file_name, newline='') as csvfile:
-                records.extend(self.id_deprecations(csv.DictReader(csvfile, quoting=csv.QUOTE_NONE, delimiter='\t'),
-                                                    remaining_columns=['moduleId', 'conceptId', 'languageCode',
-                                                                       'typeId', 'term', 'caseSignificanceId']))
-            self.stdout.write('Loading description file {} ({:,} records)'.format(resolved_file_name,
-                                                                                  len(records)))
-            self.copy_from(cursor, records, Description.objects.model._meta.db_table,
-                           columns=['id', 'effectiveTime', 'active', 'moduleId', 'conceptId', 'languageCode', 'typeId',
-                                    'term', 'caseSignificanceId'])
+                with open(resolved_file_name, newline='') as csvfile:
+                    records.extend(self.id_deprecations(csv.DictReader(csvfile, quoting=csv.QUOTE_NONE, delimiter='\t'),
+                                                        remaining_columns=['moduleId', 'conceptId', 'languageCode',
+                                                                           'typeId', 'term', 'caseSignificanceId']))
+                self.stdout.write('Loading description file {} ({:,} records)'.format(resolved_file_name,
+                                                                                      len(records)))
+                self.copy_from(cursor, records, Description.objects.model._meta.db_table,
+                               columns=['id', 'effectiveTime', 'active', 'moduleId', 'conceptId', 'languageCode', 'typeId',
+                                        'term', 'caseSignificanceId'])
 
-            records = []
-            filename = os.path.join(options['snomed_ct_location'], 'Terminology',
-                                TEXTDEFINITION_FILENAME_TEMPLATE.format(dist_type, region_type))
-            resolved_file_name = os.path.abspath(glob(filename)[0])
-            self.stdout.write('Loading text definition file {}'.format(resolved_file_name))
+                records = []
+                filename = os.path.join(options['snomed_ct_location'], 'Terminology',
+                                    TEXTDEFINITION_FILENAME_TEMPLATE.format(dist_type, region_type))
+                resolved_file_name = os.path.abspath(glob(filename)[0])
+                self.stdout.write('Loading text definition file {}'.format(resolved_file_name))
 
-            with open(resolved_file_name, newline='') as csvfile:
-                records.extend(self.id_deprecations(csv.DictReader(csvfile, quoting=csv.QUOTE_NONE, delimiter='\t'),
-                                                    remaining_columns=['moduleId', 'conceptId', 'languageCode',
-                                                                       'typeId', 'term', 'caseSignificanceId']))
-            self.copy_from(cursor, records, TextDefinition.objects.model._meta.db_table,
-                           columns=['id', 'effectiveTime', 'active', 'moduleId', 'conceptId', 'languageCode', 'typeId',
-                                    'term', 'caseSignificanceId'])
-            self.stdout.write("Done")
+                with open(resolved_file_name, newline='') as csvfile:
+                    records.extend(self.id_deprecations(csv.DictReader(csvfile, quoting=csv.QUOTE_NONE, delimiter='\t'),
+                                                        remaining_columns=['moduleId', 'conceptId', 'languageCode',
+                                                                           'typeId', 'term', 'caseSignificanceId']))
+                self.copy_from(cursor, records, TextDefinition.objects.model._meta.db_table,
+                               columns=['id', 'effectiveTime', 'active', 'moduleId', 'conceptId', 'languageCode', 'typeId',
+                                        'term', 'caseSignificanceId'])
+                self.stdout.write("Done")
 
-            records = []
-            filename = os.path.join(options['snomed_ct_location'], 'Terminology',
-                                RELATIONSHIP_FILENAME_TEMPLATE.format(dist_type, region_type))
-            resolved_file_name = os.path.abspath(glob(filename)[0])
+                records = []
+                filename = os.path.join(options['snomed_ct_location'], 'Terminology',
+                                    RELATIONSHIP_FILENAME_TEMPLATE.format(dist_type, region_type))
+                resolved_file_name = os.path.abspath(glob(filename)[0])
 
-            self.stdout.write('Loading relationship file {}'.format(resolved_file_name))
+                self.stdout.write('Loading relationship file {}'.format(resolved_file_name))
 
-            with open(resolved_file_name, newline='') as csvfile:
-                records.extend(self.id_deprecations(csv.DictReader(csvfile, quoting=csv.QUOTE_NONE, delimiter='\t'),
-                                                    remaining_columns=['moduleId', 'sourceId', 'destinationId',
-                                                                       'relationshipGroup', 'typeId',
-                                                                       'characteristicTypeId', 'modifierId']))
-            self.copy_from(cursor, records, Relationship.objects.model._meta.db_table,
-                           columns=['id', 'effectiveTime', 'active', 'moduleId', 'sourceId', 'destinationId',
-                                    'relationshipGroup', 'typeId', 'characteristicTypeId', 'modifierId'])
-            self.stdout.write("Done")
+                with open(resolved_file_name, newline='') as csvfile:
+                    records.extend(self.id_deprecations(csv.DictReader(csvfile, quoting=csv.QUOTE_NONE, delimiter='\t'),
+                                                        remaining_columns=['moduleId', 'sourceId', 'destinationId',
+                                                                           'relationshipGroup', 'typeId',
+                                                                           'characteristicTypeId', 'modifierId']))
+                self.copy_from(cursor, records, Relationship.objects.model._meta.db_table,
+                               columns=['id', 'effectiveTime', 'active', 'moduleId', 'sourceId', 'destinationId',
+                                        'relationshipGroup', 'typeId', 'characteristicTypeId', 'modifierId'])
+                self.stdout.write("Done")
 
-        self.stdout.write(self.style.SUCCESS('Successfully loaded SNOMED CT release.'))
+                self.stdout.write(self.style.SUCCESS('Successfully loaded SNOMED CT release.'))
 
-        if options['icd10_map_location']:
-            records = []
-            filename = os.path.join(options['icd10_map_location'], ICD_MAP_FILENAME)
-            resolved_file_name = os.path.abspath(glob(filename)[0])
-            self.stdout.write('Loading ICD 10 mapping file {}'.format(resolved_file_name))
+            if options['icd10_map_location']:
+                with transaction.atomic():
+                    cursor = connection.cursor()
+                    records = []
+                    filename = os.path.join(options['icd10_map_location'], ICD_MAP_FILENAME)
+                    resolved_file_name = os.path.abspath(glob(filename)[0])
+                    self.stdout.write('Loading ICD 10 mapping file {}'.format(resolved_file_name))
 
-            with open(resolved_file_name, newline='') as csvfile:
-                records.extend(self.id_deprecations(csv.DictReader(csvfile, quoting=csv.QUOTE_NONE, delimiter='\t'),
-                                                    remaining_columns=['moduleId', 'refsetId', 'referencedComponentId',
-                                                                       'referencedComponentName', 'mapGroup',
-                                                                       'mapPriority', 'mapRule', 'mapAdvice',
-                                                                       'mapTarget', 'mapTargetName', 'correlationId',
-                                                                       'mapCategoryId', 'mapCategoryName']))
-            self.copy_from(cursor, records, ICD10_Mapping.objects.model._meta.db_table,
-                           columns=['id', 'effectiveTime', 'active', 'moduleId', 'refsetId', 'referencedComponentId',
-                                    'referencedComponentName', 'mapGroup', 'mapPriority', 'mapRule', 'mapAdvice',
-                                    'mapTarget', 'mapTargetName', 'correlationId', 'mapCategoryId', 'mapCategoryName'])
-            self.stdout.write("Done")
+                    with open(resolved_file_name, newline='') as csvfile:
+                        records.extend(self.id_deprecations(csv.DictReader(csvfile, quoting=csv.QUOTE_NONE, delimiter='\t'),
+                                                            remaining_columns=['moduleId', 'refsetId', 'referencedComponentId',
+                                                                               'referencedComponentName', 'mapGroup',
+                                                                               'mapPriority', 'mapRule', 'mapAdvice',
+                                                                               'mapTarget', 'mapTargetName', 'correlationId',
+                                                                               'mapCategoryId', 'mapCategoryName']))
+                    self.copy_from(cursor, records, ICD10_Mapping.objects.model._meta.db_table,
+                                   columns=['id', 'effectiveTime', 'active', 'moduleId', 'refsetId', 'referencedComponentId',
+                                            'referencedComponentName', 'mapGroup', 'mapPriority', 'mapRule', 'mapAdvice',
+                                            'mapTarget', 'mapTargetName', 'correlationId', 'mapCategoryId', 'mapCategoryName'])
+                    self.stdout.write("Done")
+                    self.stdout.write(self.style.SUCCESS('Successfully loaded SNOMED-CT to ICD 10 mapping release.'))
 
     def copy_from(self, cursor, records, table_name, sep='!', columns=None):
         csv_file_like_object = io.StringIO()
