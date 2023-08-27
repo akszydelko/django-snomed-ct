@@ -1,7 +1,7 @@
 django-snomed-ct
 ====================
 
-A [Django App](https://www.djangoproject.com/) for storing, managing, and querying the SNOMED Clinical Terms (SNOMED CT(https://www.snomed.org/snomed-ct/Use-SNOMED-CT)) system - an international medical terminology system and standard - by itself or as part of Django application.
+A [Django App](https://www.djangoproject.com/) for storing, managing, and querying the SNOMED Clinical Terms ([SNOMED CT](https://www.snomed.org/snomed-ct/Use-SNOMED-CT)) system - an international medical terminology system and standard - by itself or as part of Django application.
 
 ## Loading data ##
 You can use the **load_snomed_ct_data** custom django-admin command to load a release into a configured database.  
