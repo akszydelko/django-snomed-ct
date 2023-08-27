@@ -1,8 +1,7 @@
 import django
 django.setup()
-from django.db.models import Q
-from snomed_ct.models import (DEFINITION_STATUS_MAPPING, ISA, ATTRIBUTE_HUMAN_READABLE_NAMES, pretty_print_list,
-                              Concept, ASSOCIATED_MORPHOLOGY, FINDING_SITE)
+from snomed_ct.models import (ISA, ATTRIBUTE_HUMAN_READABLE_NAMES, pretty_print_list, Concept, ASSOCIATED_MORPHOLOGY,
+                              FINDING_SITE)
 from random import choice
 
 INTERPRETS = 363714003

@@ -1,11 +1,3 @@
-import os
-import re
-import csv
-import io
-import sys
-
-from psycopg2.errors import BadCopyFileFormat
-
 try:
     from tqdm import tqdm
 except ImportError:
@@ -13,10 +5,7 @@ except ImportError:
         return item
 from datetime import date, datetime
 
-from django.core.management.base import BaseCommand, CommandError
-from django.db import transaction, connection
-from glob import glob
-
+from django.core.management.base import BaseCommand
 from snomed_ct.models import Concept, ICD10_Mapping, TextSearchTypes, ISA
 from snomed_ct.controlled_natural_language import ControlledEnglishGenerator, MalformedSNOMEDExpressionError
 
