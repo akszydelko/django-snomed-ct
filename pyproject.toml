@@ -1,6 +1,25 @@
 [project]
 name = "django-snomed-ct"
 description = "A Django App for storing, managing, and querying SNOMED CT by itself or as part of a Django application."
+dynamic = ["version"]
+readme = "README.md"
+requires-python = ">=3.10"
+license = "GNU GENERAL PUBLIC LICENSE"
+keywords = []
+authors = [
+  { name = "Chimezie Ogbuji", email = "chimezie@gmail.com" }
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: Implementation :: PyPy",
+]
+dependencies = [
+  "openai",
+  "python-dotenv",
+]
 
 [build-system]
 requires = ["setuptools >= 61.0.0", "wheel"]
