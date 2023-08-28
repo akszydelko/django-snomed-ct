@@ -74,19 +74,19 @@ class Command(BaseCommand):
         rendered_concepts = set()
         if options['query_type'] == 'SNOMED':
             concepts = Concept.objects.by_full_specified_names(options['search_terms'], search_type=search_type)
-            concepts = concepts.has_definition() if options['def_only'] else concepts
+            concepts = concepts.has_definitions() if options['def_only'] else concepts
             for concept in concepts.is_active():
                 self.render_concept(concept, options['output_type'], 1 if options['related'] else -1,
                                     rendered=rendered_concepts)
         elif options['query_type'] == 'SNOMED_CODE':
             concepts = Concept.objects.by_ids(options['search_terms'])
-            concepts = concepts.has_definition() if options['def_only'] else concepts
+            concepts = concepts.has_definitions() if options['def_only'] else concepts
             for concept in concepts.is_active():
                 self.render_concept(concept, options['output_type'], 1 if options['related'] else -1,
                                     rendered=rendered_concepts)
         elif options['query_type'] == 'ICD_CODE':
             mappings = ICD10_Mapping.objects.by_icd_codes(options['search_terms'])
-            mappings = mappings.has_definition() if options['def_only'] else mappings
+            mappings = mappings.has_definitions() if options['def_only'] else mappings
             for mapping in mappings:
                 concept = mapping.referenced_component
                 if concept.active:
@@ -94,7 +94,7 @@ class Command(BaseCommand):
                                         rendered=rendered_concepts)
         else:
             mappings = ICD10_Mapping.objects.by_icd_names(options['search_terms'], search_type=search_type)
-            mappings = mappings.has_definition() if options['def_only'] else mappings
+            mappings = mappings.has_definitions() if options['def_only'] else mappings
             for mapping in mappings:
                 if mapping.referenced_component.active:
                     self.render_concept(mapping.referenced_component, options['output_type'],

@@ -99,7 +99,7 @@ class ConceptQuerySet(CommonSNOMEDQuerySet):
     def has_icd10_mappings(self):
         return self.filter(icd10_mappings__isnull=False)
 
-    def has_definition(self):
+    def has_definitions(self):
         return self.filter(text_definitions__isnull=False)
 
     def icd10_mappings(self):
@@ -134,7 +134,7 @@ class ConceptManager(SNOMEDCTModelManager):
     def get_queryset(self):
         return ConceptQuerySet(self.model)
 
-    def has_definition(self):
+    def has_definitions(self):
         return self.get_queryset().has_definition()
 
 PRIMITIVE_CONCEPT = 900000000000074008
