@@ -1,7 +1,7 @@
 [project]
 name = "django-snomed-ct"
 description = "A Django App for storing, managing, and querying SNOMED CT by itself or as part of a Django application."
-dynamic = ["version"]
+version = "0.5"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {file = "LICENSE"}
