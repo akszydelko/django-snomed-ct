@@ -135,7 +135,7 @@ class ConceptManager(SNOMEDCTModelManager):
         return ConceptQuerySet(self.model)
 
     def has_definitions(self):
-        return self.get_queryset().has_definition()
+        return self.get_queryset().has_definitions()
 
 PRIMITIVE_CONCEPT = 900000000000074008
 DEFINED_CONCEPT = 900000000000073002
