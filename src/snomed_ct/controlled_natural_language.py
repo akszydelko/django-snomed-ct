@@ -222,7 +222,8 @@ class ControlledEnglishGenerator:
     def get_controlled_english_definition(self, embed_ids=False):
         classification_names_w_article = [
            "{} ({})".format(prefix_with_indefinite_article(c.fully_specified_name_no_type).lower(),
-                            c.id)for c in self.concept.isa]
+                            c.id) if embed_ids
+           else prefix_with_indefinite_article(c.fully_specified_name_no_type).lower() for c in self.concept.isa]
         non_isa_relationships = (self.concept.outbound_relationships()
                                              .filter(active=True)
                                              .unique_links()
