@@ -263,9 +263,9 @@ class ControlledEnglishGenerator:
 
 
 def main():
-    concepts = Concept.objects.mapped().has_definition()
+    concepts = Concept.objects.mapped().has_definitions()
     pks = concepts.ids
-    concept = Concept.objects.mapped().has_definition().get(pk=choice(pks))
+    concept = Concept.objects.mapped().has_definitions().get(pk=choice(pks))
     print(concept)
     for defn in concept.definitions():
         print(defn.term)

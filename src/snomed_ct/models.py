@@ -736,7 +736,7 @@ class ICD10_MappingQuerySet(CommonSNOMEDQuerySet):
     def get_icd_codes(self):
         return self.values_list('map_target', flat=True)
 
-    def has_definition(self):
+    def has_definitions(self):
         return Concept.objects.has_definitions().filter(id__in=self.values_list('referenced_component', flat=True))
 
     @property
