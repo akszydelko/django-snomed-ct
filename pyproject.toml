@@ -17,8 +17,7 @@ classifiers = [
   "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
-  "openai",
-  "python-dotenv",
+  "django>=3.2",
 ]
 
 [build-system]
