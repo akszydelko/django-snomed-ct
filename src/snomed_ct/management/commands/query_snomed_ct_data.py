@@ -85,8 +85,7 @@ class Command(BaseCommand):
                 self.render_concept(concept, options['output_type'], 1 if options['related'] else -1,
                                     rendered=rendered_concepts)
         elif options['query_type'] == 'ICD_CODE':
-            mappings = ICD10_Mapping.objects.by_icd_codes(options['search_terms'], 1 if options['related'] else -1,
-                                                          rendered=rendered_concepts)
+            mappings = ICD10_Mapping.objects.by_icd_codes(options['search_terms'])
             mappings = mappings.has_definition() if options['def_only'] else mappings
             for mapping in mappings:
                 concept = mapping.referenced_component
