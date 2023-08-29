@@ -10,8 +10,14 @@ from operator import or_
 from .manager import SNOMEDCTModelManager
 
 # Get the cache shortcut
-cache = caches['snomed_ct']
+try:
+    cache = caches['snomed_ct']
+except:
+    class PassThruCache:
+        def get_or_set(self, key, val_func):
+            return val_func()
 
+    cache = PassThruCache()
 
 def pretty_print_list(my_list, sep=", ", and_char=", & "):
     return and_char.join([sep.join(my_list[:-1]), my_list[-1]]) if len(my_list) > 2 else '{} and {}'.format(
