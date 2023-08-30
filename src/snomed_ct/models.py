@@ -123,10 +123,13 @@ class ConceptManager(SNOMEDCTModelManager):
                                **{'term__{}'.format(query_suffix): item}) for item in search_strings))
         return self.get_queryset().filter(id__in=Description.objects.filter(query).values_list('concept_id', flat=True))
 
-    def by_fully_specified_name(self, **kwargs):
-        return self.get_queryset().filter(
-            id__in=Description.fully_specified_names().filter(**kwargs).values_list('concept__id',
-                                                                                    flat=True))
+    def by_fully_specified_name(self, search_string, search_type=TextSearchTypes.CASE_INSENSITIVE_CONTAINS):
+        query_suffix = GetSearchQuerySuffix(search_type)
+        kwargs = {'term__{}'.format(query_suffix): search_string,
+                  'type_id': DESCRIPTION_TYPES['Fully specified name']}
+        return self.get_queryset().filter(id__in=Description.objects.filter(**kwargs).values_list('concept_id',
+                                                                                                  flat=True))
+
     def mapped(self):
         return self.get_queryset().filter(pk__in=ICD10_Mapping.objects.all().values_list('referenced_component__pk',
                                                                                          flat=True))
