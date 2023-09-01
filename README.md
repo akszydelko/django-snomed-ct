@@ -111,8 +111,8 @@ Concept query sets have a **has_definitions** method which filters the concepts 
 <ConceptQuerySet [<Concept: 783096008|Subaortic stenosis and short stature syndrome (disorder)>]>
 ```
 
-A single Concept can be fetched by the **by_id** Class method and you can get direct access to the fully specified name 
-(via the **fully_specified_name** property) and the name without the parenthesized type suffix (**fully_specified_name_no_type** property) 
+You can get direct access to the fully specified name 
+(via the **fully_specified_name** property) of a Concept as well as the name without the parenthesized type suffix (**fully_specified_name_no_type** property) 
 
 ```python
 concept = Concept.by_id(194733006)
