@@ -59,7 +59,6 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument('snomed_ct_location', type=str)
         parser.add_argument('--icd10_map_location', default=None)
-        parser.add_argument('--release_file', type=argparse.FileType('r'))
         parser.add_argument('--transitive_closure_location', default=None)
         parser.add_argument('--international', action='store_true', default=False)
         parser.add_argument('--snapshot', action='store_true', default=False)
@@ -277,18 +276,3 @@ class Command(BaseCommand):
     def __get_location_file_list(self, location):
         return [os.path.join(location, file_name) for file_name in os.listdir(location)]
 
-    def __discover_release_date(self, location):
-        release_file_list = []
-        release_file_list.extend(self.__get_location_file_list(os.path.join(location, 'Terminology')))
-        release_file_list.extend(self.__get_location_file_list(os.path.join(location, 'Refset', 'Language')))
-        release_file_list.extend(self.__get_location_file_list(os.path.join(location, 'Refset', 'Content')))
-        release_file_list.extend(self.__get_location_file_list(os.path.join(location, 'Refset', 'Map')))
-
-        for file_path in release_file_list:
-            file_name = os.path.basename(file_path)
-            match = re.match(r'(sct2|der2)_[\w\-_]+(?P<date>\d{8})\.txt', file_name)
-
-            if not self.release_date:
-                self.release_date = match.group('date')
-            elif self.release_date != match.group('date'):
-                self.__raise_date_mismatch_error()

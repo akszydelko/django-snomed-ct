@@ -19,6 +19,43 @@ except:
 
     cache = PassThruCache()
 
+def print_function_entry_and_exit(decorated_function):
+    """
+    Function decorator logging entry + exit and parameters of functions.
+
+    Entry and exit as logging.info, parameters as logging.DEBUG.
+    """
+    import inspect, time, functools
+
+    @functools.wraps(decorated_function)
+    def wrapper(*dec_fn_args, **dec_fn_kwargs):
+        # Log function entry
+        func_name = decorated_function.__name__
+
+
+        # Log function params (args and kwargs)
+        func_args = inspect.signature(decorated_function).bind(*dec_fn_args, **dec_fn_kwargs).arguments
+        recursion_depth = 0
+        for var_name, var_value in func_args.items():
+            if var_name == 'recursion_depth':
+                recursion_depth = var_value
+        print(f"{' '*recursion_depth}Entering {func_name}()...")
+        func_args_str = ', '.join(
+            f"{var_name} = {var_value}"
+            for var_name, var_value
+            in func_args.items()
+        )
+        print(f"{' '*recursion_depth}\t{func_args_str}")
+
+        # Execute wrapped (decorated) function:
+        out = decorated_function(*dec_fn_args, **dec_fn_kwargs)
+
+        print(f"{' '*recursion_depth}Done running {func_name}()!")
+
+        return out
+    return wrapper
+
+
 def pretty_print_list(my_list, sep=", ", and_char=", & "):
     return and_char.join([sep.join(my_list[:-1]), my_list[-1]]) if len(my_list) > 2 else '{} and {}'.format(
         my_list[0], my_list[1]
@@ -200,6 +237,9 @@ class Concept(CommonSNOMEDModel):
     def fully_specified_name_no_type(self):
         return SNOMED_NAME_PATTERN.search(self.get_fully_specified_name().term).group('name')
 
+    def fully_specified_name_and_type(self, pattern=SNOMED_NAME_PATTERN):
+        return pattern.search(self.get_fully_specified_name().term).groups()
+
     @property
     def fully_specified_name(self):
         return self.get_fully_specified_name().term
@@ -227,6 +267,12 @@ class Concept(CommonSNOMEDModel):
         return cls.objects.filter(id__in=Description.objects.filter(**kwargs).values_list('concept_id', flat=True))
 
     @classmethod
+    def by_any_description(cls, search_string, search_type=TextSearchTypes.CASE_INSENSITIVE_CONTAINS):
+        query_suffix = GetSearchQuerySuffix(search_type)
+        kwargs = {'term__{}'.format(query_suffix): search_string}
+        return cls.objects.filter(id__in=Description.objects.filter(**kwargs).values_list('concept_id', flat=True))
+
+    @classmethod
     def by_description(cls, search_string, search_type=TextSearchTypes.CASE_INSENSITIVE_CONTAINS):
         query_suffix = GetSearchQuerySuffix(search_type)
         kwargs = {'term__{}'.format(query_suffix): search_string}
@@ -245,7 +291,7 @@ class Concept(CommonSNOMEDModel):
         )
 
     def __get_preferred_term(self, lang):
-        return self.descriptions.get(
+        return self.descriptions.filter(
             type_id=DESCRIPTION_TYPES['Synonym'],
             active=True)
 
@@ -269,7 +315,7 @@ class Concept(CommonSNOMEDModel):
     def isa(self):
         return self.related_concepts(type_id=ISA)
 
-    def part_of_transitive(self, chain=None, stop_concepts=None, **kwargs):
+    def part_of_transitive(self, chain=None, stop_concepts=None, recursion_depth=0, **kwargs):
         stop_concepts = stop_concepts if stop_concepts else [262225004, 229761008, 362874006, 361355005, 278195005,
                                                              38266002, 362875007, 229757002, 362608006]
         chain = chain if chain else []
@@ -277,7 +323,8 @@ class Concept(CommonSNOMEDModel):
         rt = [self.id] if is_valid_concept else []
         if is_valid_concept and self.id not in chain:
             for concept in self.part_of:
-                rt.extend(concept.part_of_transitive(chain, stop_concepts, **kwargs))
+                if concept.id not in stop_concepts:
+                    rt.extend(concept.part_of_transitive(chain + rt, stop_concepts, recursion_depth=recursion_depth+1, **kwargs))
         return chain + rt
 
         # return Concept.objects.filter(id__in=self.inbound_relationships()
@@ -338,6 +385,10 @@ class DescriptionQuerySet(CommonSNOMEDQuerySet):
     @property
     def fully_specified_names(self):
         return self.filter(type_id=DESCRIPTION_TYPES['Fully specified name'])
+
+    @property
+    def concepts(self):
+        return Concept.by_ids(set(self.values_list('concept__id', flat=True)))
 
     @property
     def synonyms(self):
@@ -493,6 +544,19 @@ class RelationshipManager(SNOMEDCTModelManager):
     def get_queryset(self):
         return RelationshipQuerySet(self.model)
 
+    def has_type(self, type_id):
+        return self.by_type_id(type_id)
+
+    def has_types(self, type_ids):
+        return self.by_type_ids(type_ids)
+
+    def by_type_id(self, type_id):
+        return self.get_queryset().filter(type_id=type_id)
+
+    def by_type_ids(self, type_ids):
+        return self.get_queryset().filter(type_id_in=type_ids)
+
+
 ATTRIBUTE_HUMAN_READABLE_NAMES = {
     363698007: 'is located in',
     116676008: 'has morphology',
@@ -624,7 +688,7 @@ class Relationship(CommonSNOMEDModel):
         db_table = 'sct2_relationship'
 
     def __str__(self):
-        return f"{self.source} - {self.type} -> {self.destination}"
+        return f"{self.source} - {self.type} -> {self.destination} [{self.relationship_group}]"
 
 ############################
 ### Reference set models ###
